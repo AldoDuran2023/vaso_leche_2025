@@ -1,4 +1,4 @@
-# API REST - Sistema de Punto de Venta (POS)
+# API REST - Sistema de gestion de Vaso de Leche Acovichay Alto
 
 ## Descripción
 
