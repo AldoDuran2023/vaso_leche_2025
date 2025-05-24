@@ -10,6 +10,7 @@ class DetalleEntrega(db.Model):
     fk_entrega = db.Column(db.Integer, db.ForeignKey('Entregas.id_racion'), nullable=False)
     fk_beneficiaria = db.Column(db.Integer, db.ForeignKey('Beneficiarias.id_beneficiaria'), nullable=False)
     cantidad_raciones = db.Column(db.Integer, nullable=False)
+    estado = db.Column(db.Boolean, default=False)
     
     # Relaciones
     entrega = relationship('Entrega', back_populates='detalle_entregas')
@@ -17,7 +18,8 @@ class DetalleEntrega(db.Model):
     entrega = relationship(Entrega, back_populates='detalle_entregas')
     detalles_viveres = relationship('DetalleViveresEntregados', back_populates='detalle_entrega')
     
-    def __init__(self, fk_entrega, fk_beneficiaria, cantidad_raciones):
+    def __init__(self, fk_entrega, fk_beneficiaria, cantidad_raciones, estado=False):
         self.fk_entrega = fk_entrega
         self.fk_beneficiaria = fk_beneficiaria
         self.cantidad_raciones = cantidad_raciones
+        self.estado = estado

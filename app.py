@@ -14,6 +14,7 @@ from src.routes.CargoRoute import cargos_bp
 from src.routes.InventarioRoute import inventarios_bp
 from src.routes.MultaRouter import multas
 from src.routes.MovimientoRoute import movimiento_bp
+from src.routes.EntregaRoute import entregas
 from flask_cors import CORS
 import os
 
@@ -25,7 +26,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Inicializa la base de datos con la app
 db.init_app(app)
-CORS(app, resources={r"/*": {"origins": os.environ.get("URL")}})
+CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
 
 app.register_blueprint(asistencias)
 app.register_blueprint(beneficiarias)
@@ -39,6 +40,7 @@ app.register_blueprint(cargos_bp)
 app.register_blueprint(inventarios_bp)
 app.register_blueprint(multas)
 app.register_blueprint(movimiento_bp)
+app.register_blueprint(entregas)
 
 # Ruta de prueba
 @app.route('/')
