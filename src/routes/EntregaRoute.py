@@ -4,6 +4,8 @@ from src.models.Entrega import Entrega
 from src.models.Beneficiaria import Beneficiaria
 from src.models.DetalleEntrega import DetalleEntrega
 from src.models.DetalleViverEntregado import DetalleViveresEntregados
+from src.models.Multa import Multa
+from src.models.TipoMulta import TipoMulta
 from src.models.Inventario import Inventario
 from src.database.db import db
 from datetime import datetime
@@ -80,6 +82,22 @@ def crear_entrega():
                 )
 
                 db.session.add_all([detalle_avena, detalle_leche])
+            
+            # Obtener el tipo de multa y su monto
+            tipo_multa = TipoMulta.query.get(3)  
+            if tipo_multa:
+                # Calcular el monto total: monto_por_multa * cantidad_de_hijos
+                monto_total = tipo_multa.monto * beneficiaria.cantidad_hijos
+                
+                nueva_multa = Multa(
+                    fk_beneficiaria=beneficiaria.id_beneficiaria,
+                    fk_tipo_multa=3,  # Tipo de multa por ración
+                    monto=monto_total,  # Monto total calculado
+                    fecha_multa=datetime.now().date(),
+                    pagado=0,  # No pagado por defecto
+                    observaciones=f'Multa automática por {beneficiaria.cantidad_hijos} comision de raciones en entrega'
+                )
+                db.session.add(nueva_multa)
 
         db.session.commit()
 
@@ -100,6 +118,35 @@ def marcar_detalle_como_entregado(id):
         
         if detalle.estado:
             return jsonify({'success': False, 'message': 'Ya fue entregado'}), 400
+
+        # Verificar si la beneficiaria tiene multas pendientes
+        from src.models.Multa import Multa
+        
+        multas_pendientes = Multa.query.filter_by(
+            fk_beneficiaria=detalle.fk_beneficiaria,
+            pagado=0  # 0 = No pagado
+        ).all()
+        
+        if multas_pendientes:
+            total_multas_pendientes = sum(float(multa.monto) for multa in multas_pendientes)
+            cantidad_multas = len(multas_pendientes)
+            
+            return jsonify({
+                'success': False,
+                'message': f'La beneficiaria tiene {cantidad_multas} multa(s) pendiente(s) por un total de ${total_multas_pendientes:.2f}. Debe pagar las multas antes de recibir la entrega.',
+                'multas_pendientes': {
+                    'cantidad': cantidad_multas,
+                    'total_monto': total_multas_pendientes,
+                    'multas': [
+                        {
+                            'id_multa': multa.id_multa,
+                            'monto': float(multa.monto),
+                            'fecha_multa': multa.fecha_multa.isoformat() if multa.fecha_multa else None,
+                            'tipo_multa': multa.fk_tipo_multa
+                        } for multa in multas_pendientes
+                    ]
+                }
+            }), 400
 
         # Verificamos si hay stock suficiente antes de continuar
         for item in detalle.detalles_viveres:
