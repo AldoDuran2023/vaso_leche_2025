@@ -15,6 +15,7 @@ from src.routes.InventarioRoute import inventarios_bp
 from src.routes.MultaRouter import multas
 from src.routes.MovimientoRoute import movimiento_bp
 from src.routes.EntregaRoute import entregas
+from src.routes.auth import auth
 from flask_cors import CORS
 import os
 
@@ -28,6 +29,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
 
+app.register_blueprint(auth)
 app.register_blueprint(asistencias)
 app.register_blueprint(beneficiarias)
 app.register_blueprint(gastos)

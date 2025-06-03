@@ -3,10 +3,17 @@ from src.models.Persona import Persona
 from src.models.Beneficiaria import Beneficiaria
 from src.models.TipoBeneficiaria import TipoBeneficiaria
 from src.database.db import db
-from utils.paginador import paginar_query  
+from utils.paginador import paginar_query 
+from functionJWT import validate_token 
 
 
 beneficiarias = Blueprint('beneficiarias', __name__)
+
+# Solo los autenticados pueden acceder
+@beneficiarias.before_request
+def verificar_token():
+    token = request.headers['Authorization'].split(" ")[1]
+    return validate_token(token, output=False)
 
 # ruta para obtener todas las beneficiarias
 @beneficiarias.route('/api/beneficiarias', methods=['GET'])
@@ -64,7 +71,49 @@ def get_beneficiarias():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
+    
+# ruta para obtener a todas las beneficiarias activas sin paginador
+@beneficiarias.route('/api/beneficiarias/activas', methods=['GET'])
+def get_beneficiarias_activas():
+    try:
+        beneficiarias = db.session.query(Beneficiaria)\
+            .join(Persona, Beneficiaria.fk_persona == Persona.id_persona)\
+            .join(TipoBeneficiaria, Beneficiaria.fk_tipo_beneficiaria == TipoBeneficiaria.id_tipo_beneficiaria)\
+            .filter(Beneficiaria.estado == True)\
+            .all()
+        
+        beneficiarias_data = []
+        for beneficiaria in beneficiarias:
+            beneficiarias_data.append({
+                'id_beneficiaria': beneficiaria.id_beneficiaria,
+                'estado': beneficiaria.estado,
+                'cantidad_hijos': beneficiaria.cantidad_hijos,
+                'codigo_SISFOH': beneficiaria.codigo_SISFOH,
+                'fecha_registro': beneficiaria.fecha_registro.strftime('%Y-%m-%d %H:%M:%S') if beneficiaria.fecha_registro else None,
+                'persona': {
+                    'id_persona': beneficiaria.persona.id_persona,
+                    'DNI': beneficiaria.persona.DNI,
+                    'nombres': beneficiaria.persona.nombres,
+                    'apellido_paterno': beneficiaria.persona.apellido_paterno,
+                    'apellido_materno': beneficiaria.persona.apellido_materno,
+                    'direccion': beneficiaria.persona.direccion,
+                    'nombre_completo': f"{beneficiaria.persona.nombres} {beneficiaria.persona.apellido_paterno} {beneficiaria.persona.apellido_materno}"
+                },
+                'tipo_beneficiaria': {
+                    'id_tipo_beneficiaria': beneficiaria.tipo_beneficiaria.id_tipo_beneficiaria,
+                    'tipo': beneficiaria.tipo_beneficiaria.tipo,
+                    'cantidad_raciones': beneficiaria.tipo_beneficiaria.cantidad_raciones
+                }
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': beneficiarias_data,
+            'message': 'Beneficiarias activas obtenidas exitosamente'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
     
 # ruta para insertar una nueva beneficiaria
 @beneficiarias.route('/api/beneficiarias/create', methods=['POST'])

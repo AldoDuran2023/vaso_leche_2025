@@ -21,7 +21,7 @@ def get_reuniones():
             page=page,
             per_page=per_page,
             route_name='reuniones.get_reuniones',  # Usa el nombre registrado de la ruta
-            fields=['idReunion', 'fecha', 'hora_inicio', 'hora_fin', 'estado']
+            fields=['id_reunion', 'fecha', 'hora', 'lugar', 'motivo', 'estado_reunion']
         )
 
         return jsonify(resultado), 200
@@ -91,4 +91,24 @@ def eliminar_reunion(id_reunion):
             'success': False,
             'error': str(e),
             'message': 'Error al eliminar la reunión'
+        }), 500
+        
+@reuniones.route('/api/reuniones/actualizar_estado/<int:id_reunion>', methods=['PUT'])
+def actualizar_estado_reunion(id_reunion):
+    try:
+        reunion = Reunion.query.get_or_404(id_reunion)
+
+        reunion.estado_reunion = 1 
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Estado de la reunión actualizado correctamente.'
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': 'Error al actualizar el estado de la reunión.',
+            'error': str(e)
         }), 500

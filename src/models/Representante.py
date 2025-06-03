@@ -19,6 +19,7 @@ class Representante(db.Model):
     movimientos = relationship('Movimiento', back_populates='representante')
     gastos = relationship('Gasto', back_populates='representante')
     entregas = relationship('Entrega', back_populates='representante')
+    usuario = relationship('Usuario', back_populates='representante', uselist=False) 
     
     def __init__(self, fk_cargo, fecha_registro, fk_beneficiaria, fk_junta_directiva, estado=True, fecha_fin=None):
         self.fk_cargo = fk_cargo

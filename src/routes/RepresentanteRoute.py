@@ -1,5 +1,9 @@
 from flask import Blueprint, request, jsonify
-from src.models import Representante
+from src.models.Representante import Representante
+from src.models.Persona import Persona
+from src.models.Beneficiaria import Beneficiaria
+from src.models.Cargo import Cargo
+from src.models.JuntaDirectiva import JuntaDirectiva # Asegúrate de que este modelo esté correctamente definido y relacionado
 from src.database.db import db
 from datetime import date
 
@@ -71,3 +75,43 @@ def registrar_representante():
             'error': str(e),
             'message': 'Error al registrar el representante'
         }), 500
+
+# Ruta para obtener representantes activas con datos personales
+@representantes.route('/api/representantes/activas', methods=['GET'])
+def obtener_representantes_activas():
+    try:
+        representantes_activos = Representante.query.filter_by(estado=True).all()
+
+        resultado = []
+        for rep in representantes_activos:
+            persona = rep.beneficiaria.persona
+            cargo = rep.cargo
+            # Asegúrate de que 'rep.junta_directiva' esté correctamente relacionado y tenga un atributo 'nombre'
+            junta_directiva_nombre = rep.junta_directiva.anio if rep.junta_directiva else None
+            resultado.append({
+                'id': rep.id_representante,
+                'fecha_registro': rep.fecha_registro.isoformat(),
+                'cargo': cargo.cargo,
+                'estado': rep.estado,
+                'junta_directiva': junta_directiva_nombre, # <-- ¡Aquí ya se está añadiendo el nombre de la junta!
+                'beneficiaria': {
+                    'dni': persona.DNI,
+                    'nombres': persona.nombres,
+                    'apellido_paterno': persona.apellido_paterno,
+                    'apellido_materno': persona.apellido_materno,
+                    'direccion': persona.direccion,
+                }
+            })
+
+        return jsonify({
+            'success': True,
+            'data': resultado
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Error al obtener las representantes activas'
+        }), 500
+

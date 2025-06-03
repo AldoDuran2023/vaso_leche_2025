@@ -11,6 +11,7 @@ class Reunion(db.Model):
     lugar = db.Column(db.String(45), nullable=False)
     motivo = db.Column(db.String(45), nullable=False)
     fk_junta_directiva = db.Column(db.Integer, db.ForeignKey('Juntas_Directivas.idJuntas_Directivas'), nullable=False)
+    estado_reunion = db.Column(db.Boolean, default=False)
     
     # Relaciones
     junta_directiva = relationship('JuntaDirectiva', back_populates='reuniones')
