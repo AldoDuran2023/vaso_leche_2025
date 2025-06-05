@@ -3,7 +3,6 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from src.models.Hijo import Hijo
 from src.models.DetalleEntrega import DetalleEntrega
-# Importa también las otras clases relacionadas si las usas en relationships
 from src.models.Representante import Representante
 from src.models.Asistencia import Asistencia
 from src.models.Multa import Multa

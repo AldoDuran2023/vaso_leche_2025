@@ -7,34 +7,57 @@ from src.models.DetalleViverEntregado import DetalleViveresEntregados
 from src.models.Multa import Multa
 from src.models.TipoMulta import TipoMulta
 from src.models.Inventario import Inventario
+from src.models.TipoViver import TipoViveres
+from src.models.Representante import Representante
+from src.models.JuntaDirectiva import JuntaDirectiva
 from src.database.db import db
 from datetime import datetime
+from sqlalchemy.orm import load_only
 
 entregas = Blueprint('entregas', __name__)
 
-# Ruta para obtener todos los registros de entregas
+# Ruta para obtener todas las entregas 
 @entregas.route('/api/entregas', methods=['GET'])
 def obetenr_entregas():
     try:
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 10))
 
-        query = Entrega.query.order_by(Entrega.fecha_entrega.desc()) 
+        # Realiza join con Representante y JuntaDirectiva
+        query = db.session.query(
+            Entrega.id_racion,
+            Entrega.fecha_entrega,
+            Entrega.estado,
+            Representante.id_representante,
+            JuntaDirectiva.anio.label("junta_anio")
+        ).join(Representante, Entrega.fk_representante == Representante.id_representante) \
+         .join(JuntaDirectiva, Representante.fk_junta_directiva == JuntaDirectiva.idJuntas_Directivas)
 
-        # Campos a devolver por cada gasto (ajusta según lo que necesites mostrar)
-        fields = ['id_racion', 'fk_representante', 'fecha_entrega', 'estado']
+        # Paginar manualmente ya que usamos columnas específicas
+        paginated = query.paginate(page=page, per_page=per_page, error_out=False)
 
-        resultado = paginar_query(query, page, per_page, 'entregas.obetenr_entregas', fields)
+        data = []
+        for row in paginated.items:
+            data.append({
+                'id_racion': row.id_racion,
+                'fecha_entrega': row.fecha_entrega.isoformat(),
+                'estado': row.estado,
+                'id_representante': row.id_representante,
+                'junta_anio': row.junta_anio
+            })
 
-        # Formatear fechas y montos si deseas mejor presentación
-        for item in resultado['data']:
-            item['fecha_entrega'] = item['fecha_entrega'].isoformat()
-
-        return jsonify(resultado)
+        return jsonify({
+            'success': True,
+            'total': paginated.total,
+            'pages': paginated.pages,
+            'page': paginated.page,
+            'per_page': paginated.per_page,
+            'data': data
+        })
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e), 'message': 'Error al listar los gastos'}), 500
-        
+        return jsonify({'success': False, 'error': str(e), 'message': 'Error al listar las entregas'}), 500
+
 # Ruta para insertar un nuevo registro de entrega
 @entregas.route('/api/entregas/create', methods=['POST'])
 def crear_entrega():
@@ -62,12 +85,11 @@ def crear_entrega():
 
             # Determinar raciones según tipo
             tipo = beneficiaria.fk_tipo_beneficiaria
-            raciones = beneficiaria.cantidad_hijos * (1 if tipo == 1 else 2 if tipo == 2 else 0)
+            raciones = beneficiaria.cantidad_hijos * (1 if tipo == 1 else 2 if tipo == 2 else 1)
 
             if raciones > 0:
-                # ID de los víveres. Asegúrate que estos IDs estén bien
-                ID_AVENA = 1
-                ID_LECHE = 2
+                ID_AVENA = TipoViveres.query.filter_by(viver = 'Avena en bolsa').first().id_viver
+                ID_LECHE = TipoViveres.query.filter_by(viver = 'Leche en lata').first().id_viver
 
                 # Crear los viveres por ración
                 detalle_avena = DetalleViveresEntregados(
@@ -84,91 +106,27 @@ def crear_entrega():
                 db.session.add_all([detalle_avena, detalle_leche])
             
             # Obtener el tipo de multa y su monto
-            tipo_multa = TipoMulta.query.get(3)  
+            tipo_multa = TipoMulta.query.get(TipoMulta.query.filter_by(tipo_multa = 'Multa por ración').first().id_tipo_multa)  
             if tipo_multa:
-                # Calcular el monto total: monto_por_multa * cantidad_de_hijos
-                monto_total = tipo_multa.monto * beneficiaria.cantidad_hijos
+                # Calcular el monto total: monto_por_multa * cantidad_de_hijos y si no tiene hijos se multiplica por 1
+                if beneficiaria.cantidad_hijos == 0:
+                    monto_total = tipo_multa.monto * 1
+                else:
+                    monto_total = tipo_multa.monto * beneficiaria.cantidad_hijos
                 
                 nueva_multa = Multa(
                     fk_beneficiaria=beneficiaria.id_beneficiaria,
-                    fk_tipo_multa=3,  # Tipo de multa por ración
-                    monto=monto_total,  # Monto total calculado
+                    fk_tipo_multa=tipo_multa.id_tipo_multa,  
+                    monto=monto_total, 
                     fecha_multa=datetime.now().date(),
-                    pagado=0,  # No pagado por defecto
-                    observaciones=f'Multa automática por {beneficiaria.cantidad_hijos} comision de raciones en entrega'
+                    pagado=0,  
+                    observaciones=f'Multa por {beneficiaria.cantidad_hijos} comision de raciones en entrega'
                 )
                 db.session.add(nueva_multa)
 
         db.session.commit()
 
         return jsonify({'success': True, 'message': 'Entrega y víveres registrados correctamente'}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-        
-# Ruta Entrega de los viveres
-@entregas.route('/api/detalle_entrega/<int:id>', methods=['PUT'])
-def marcar_detalle_como_entregado(id):
-    try:
-        detalle = DetalleEntrega.query.get(id)
-        if not detalle:
-            return jsonify({'success': False, 'message': 'Detalle no encontrado'}), 404
-        
-        if detalle.estado:
-            return jsonify({'success': False, 'message': 'Ya fue entregado'}), 400
-
-        # Verificar si la beneficiaria tiene multas pendientes
-        from src.models.Multa import Multa
-        
-        multas_pendientes = Multa.query.filter_by(
-            fk_beneficiaria=detalle.fk_beneficiaria,
-            pagado=0  # 0 = No pagado
-        ).all()
-        
-        if multas_pendientes:
-            total_multas_pendientes = sum(float(multa.monto) for multa in multas_pendientes)
-            cantidad_multas = len(multas_pendientes)
-            
-            return jsonify({
-                'success': False,
-                'message': f'La beneficiaria tiene {cantidad_multas} multa(s) pendiente(s) por un total de ${total_multas_pendientes:.2f}. Debe pagar las multas antes de recibir la entrega.',
-                'multas_pendientes': {
-                    'cantidad': cantidad_multas,
-                    'total_monto': total_multas_pendientes,
-                    'multas': [
-                        {
-                            'id_multa': multa.id_multa,
-                            'monto': float(multa.monto),
-                            'fecha_multa': multa.fecha_multa.isoformat() if multa.fecha_multa else None,
-                            'tipo_multa': multa.fk_tipo_multa
-                        } for multa in multas_pendientes
-                    ]
-                }
-            }), 400
-
-        # Verificamos si hay stock suficiente antes de continuar
-        for item in detalle.detalles_viveres:
-            inventario = Inventario.query.filter_by(fk_tipo_viver=item.fk_tipo_viver).first()
-            if not inventario or inventario.cantidad_total < item.cantidad:
-                return jsonify({
-                    'success': False,
-                    'message': f'Sin stock suficiente de {item.tipo_viver.viver}. Stock disponible: {inventario.cantidad_total if inventario else 0}'
-                }), 400
-
-        # Si todo está OK, marcamos como entregado
-        detalle.estado = True
-
-        # Descontamos del inventario
-        for item in detalle.detalles_viveres:
-            inventario = Inventario.query.filter_by(fk_tipo_viver=item.fk_tipo_viver).first()
-            inventario.cantidad_total -= item.cantidad
-            inventario.fecha_actualizacion = datetime.utcnow()
-
-        db.session.commit()
-
-        return jsonify({'success': True, 'message': 'Entrega confirmada y stock actualizado'}), 200
 
     except Exception as e:
         db.session.rollback()

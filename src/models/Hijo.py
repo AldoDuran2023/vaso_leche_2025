@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 
 class Hijo(db.Model):
     __tablename__ = 'Hijos'
-    
+
     id_hijo = db.Column(db.Integer, primary_key=True)
     fk_beneficiaria = db.Column(db.Integer, db.ForeignKey('Beneficiarias.id_beneficiaria'), nullable=False)
     fk_persona = db.Column(db.Integer, db.ForeignKey('Personas.id_persona'), nullable=False)
@@ -11,7 +11,6 @@ class Hijo(db.Model):
     estado = db.Column(db.Enum('Activo', 'Inactivo', name='estado_hijo'), default='Activo')
     numero_partida = db.Column(db.String(20))
     
-    # Relaciones
     beneficiaria = relationship('Beneficiaria', back_populates='hijos')
     persona = relationship('Persona', back_populates='hijos')
     

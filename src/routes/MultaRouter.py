@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, request
 from src.models.Multa import Multa
+from src.models.Beneficiaria import Beneficiaria
 from utils.paginador import paginar_query
 from datetime import date
 from src.database.db import db
+from sqlalchemy.orm import joinedload
 
 multas = Blueprint('multas', __name__)
 
@@ -13,18 +15,38 @@ def obtener_todas_multas():
         page = request.args.get('page', default=1, type=int)
         per_page = request.args.get('per_page', default=10, type=int)
 
-        query = Multa.query.order_by(Multa.fecha_multa.desc())
+        query = Multa.query \
+            .options(
+                joinedload(Multa.beneficiaria).joinedload(Beneficiaria.persona)
+            ) \
+            .order_by(Multa.fecha_multa.desc())
 
-        fields = ['id_multa', 'fk_beneficiaria', 'fk_tipo_multa', 'monto', 'fecha_multa', 'pagado', 'fecha_pago', 'observaciones']
+        paginated = query.paginate(page=page, per_page=per_page, error_out=False)
 
-        resultado = paginar_query(query, page, per_page, 'multas.obtener_todas_multas', fields)
+        multas_list = []
+        for multa in paginated.items:
+            persona = multa.beneficiaria.persona
+
+            multas_list.append({
+                'id_multa': multa.id_multa,
+                'fk_beneficiaria': multa.fk_beneficiaria,
+                'monto': float(multa.monto),
+                'fecha_multa': multa.fecha_multa.isoformat(),
+                'pagado': multa.pagado,
+                'fecha_pago': multa.fecha_pago.isoformat() if multa.fecha_pago else None,
+                'observaciones': multa.observaciones,
+                'nombre_completo': f"{persona.nombres} {persona.apellido_paterno} {persona.apellido_materno}"
+            })
 
         return jsonify({
             'success': True,
-            **resultado,
-            'message': 'Multas obtenidas con paginación'
+            'total': paginated.total,
+            'page': paginated.page,
+            'pages': paginated.pages,
+            'per_page': paginated.per_page,
+            'data': multas_list,
+            'message': 'Multas obtenidas correctamente con datos personales.'
         }), 200
-
     except Exception as e:
         return jsonify({
             'success': False,

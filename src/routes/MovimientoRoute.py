@@ -5,10 +5,10 @@ from src.models.Movimiento import Movimiento
 from src.models.Multa import Multa
 from utils.paginador import paginar_query
 
-movimiento_bp = Blueprint('movimientos', __name__)
+movimiento = Blueprint('movimientos', __name__)
 
 # Ruta para obtener todos los movimientos
-@movimiento_bp.route('/api/movimientos', methods=['GET'])
+@movimiento.route('/api/movimientos', methods=['GET'])
 def obtener_movimientos():
     try:
         page = int(request.args.get('page', 1))
@@ -33,7 +33,7 @@ def obtener_movimientos():
         }), 500
 
 # Ruta para registrar un nuevo movimiento
-@movimiento_bp.route('/api/movimientos', methods=['POST'])
+@movimiento.route('/api/movimientos', methods=['POST'])
 def registrar_movimiento():
     try:
         data = request.json

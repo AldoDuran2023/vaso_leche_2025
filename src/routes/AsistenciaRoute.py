@@ -29,12 +29,12 @@ def actualizar_asistencia(id_asistencia):
         if asistencia.presente is False:
             crear_multa = True
             motivo = "Inasistencia"
-            fk_tipo_multa = 2  # ID del tipo de multa por inasistencia
+            fk_tipo_multa = 1  # ID del tipo de multa por inasistencia
             
         elif asistencia.presente is True and asistencia.justificacion_tardanza:
             crear_multa = True
             motivo = "Tardanza Justificada"
-            fk_tipo_multa = 1  # ID del tipo de multa por tardanza
+            fk_tipo_multa = 3  # ID del tipo de multa por tardanza
 
         if crear_multa and fk_tipo_multa:
             # Verificar que no exista ya una multa para esta asistencia

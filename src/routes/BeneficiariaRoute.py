@@ -10,10 +10,10 @@ from functionJWT import validate_token
 beneficiarias = Blueprint('beneficiarias', __name__)
 
 # Solo los autenticados pueden acceder
-@beneficiarias.before_request
-def verificar_token():
-    token = request.headers['Authorization'].split(" ")[1]
-    return validate_token(token, output=False)
+# @beneficiarias.before_request
+# def verificar_token():
+#     token = request.headers['Authorization'].split(" ")[1]
+#     return validate_token(token, output=False)
 
 # ruta para obtener todas las beneficiarias
 @beneficiarias.route('/api/beneficiarias', methods=['GET'])

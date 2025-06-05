@@ -9,7 +9,7 @@ from utils.paginador import paginar_query
 ingresos_viveres = Blueprint('ingresos_viveres', __name__)
 
 # Ruta para ingresar nuevos viveres
-@ingresos_viveres.route('/api/ingresos-viveres', methods=['POST'])
+@ingresos_viveres.route('/api/ingresos_viveres', methods=['POST'])
 def registrar_ingreso_viveres():
     try:
         data = request.json
@@ -49,7 +49,7 @@ def registrar_ingreso_viveres():
         return jsonify({"success": False, "error": str(e), "message": "Error al registrar ingreso de víveres"}), 500
 
 # Ruta para obtener los detalles del ingreso de los viveres por id
-@ingresos_viveres.route('/api/ingresos-viveres/<int:id>', methods=['GET'])
+@ingresos_viveres.route('/api/ingresos_viveres/<int:id>', methods=['GET'])
 def obtener_ingreso_viveres(id):
     try:
         ingreso = IngresoViveres.query.get_or_404(id)
@@ -57,8 +57,12 @@ def obtener_ingreso_viveres(id):
         detalles = [
             {
                 "id_detalle_ingreso": d.id_detalle_ingreso,
-                "fk_tipo_viver": d.fk_tipo_viver,
-                "cantidad": d.cantidad
+                "cantidad": d.cantidad,
+                "tipo_viver": {
+                    "id": d.fk_tipo_viver,
+                    "nombre": d.tipo_viver.viver,
+                    "unidad": d.tipo_viver.tipo_unidad
+                }
             }
             for d in ingreso.detalle_ingresos
         ]
@@ -67,7 +71,10 @@ def obtener_ingreso_viveres(id):
             "idIngreso_Viveres": ingreso.idIngreso_Viveres,
             "fecha_ingreso": ingreso.fecha_ingreso.isoformat(),
             "responsable": ingreso.responsable,
-            "fk_junta_directiva": ingreso.fk_junta_directiva,
+            "junta_directiva": {
+                "id": ingreso.fk_junta_directiva,
+                "anio": ingreso.junta_directiva.anio
+            },
             "detalles": detalles
         }
 
@@ -76,24 +83,38 @@ def obtener_ingreso_viveres(id):
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "message": "Error al obtener ingreso de víveres"}), 500
 
+
 # Ruta para ver todos los ingresos de viveres
-@ingresos_viveres.route('/api/ingresos-viveres', methods=['GET'])
+@ingresos_viveres.route('/api/ingresos_viveres', methods=['GET'])
 def obtener_ingresos_viveres():
     try:
         page = request.args.get('page', default=1, type=int)
         per_page = request.args.get('per_page', default=10, type=int)
 
-        query = IngresoViveres.query.order_by(IngresoViveres.fecha_ingreso.desc())
+        pagination = IngresoViveres.query \
+            .join(IngresoViveres.junta_directiva) \
+            .order_by(IngresoViveres.fecha_ingreso.desc()) \
+            .paginate(page=page, per_page=per_page, error_out=False)
 
-        result = paginar_query(
-            query=query,
-            page=page,
-            per_page=per_page,
-            route_name='ingresos_viveres.obtener_ingresos_viveres',
-            fields=['idIngreso_Viveres', 'fecha_ingreso', 'responsable', 'fk_junta_directiva']
-        )
+        ingresos_list = []
+        for ingreso in pagination.items:
+            ingresos_list.append({
+                "idIngreso_Viveres": ingreso.idIngreso_Viveres,
+                "fecha_ingreso": ingreso.fecha_ingreso.isoformat(),
+                "responsable": ingreso.responsable,
+                "junta_directiva": {
+                    "id": ingreso.fk_junta_directiva,
+                    "anio": ingreso.junta_directiva.anio
+                }
+            })
 
-        return jsonify(result), 200
+        return jsonify({
+            "success": True,
+            "page": pagination.page,
+            "per_page": pagination.per_page,
+            "total": pagination.total,
+            "ingresos": ingresos_list
+        }), 200
 
     except Exception as e:
         return jsonify({

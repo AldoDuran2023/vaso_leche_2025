@@ -20,7 +20,7 @@ def get_reuniones():
             query=Reunion.query.order_by(Reunion.fecha.desc()),
             page=page,
             per_page=per_page,
-            route_name='reuniones.get_reuniones',  # Usa el nombre registrado de la ruta
+            route_name='reuniones.get_reuniones', 
             fields=['id_reunion', 'fecha', 'hora', 'lugar', 'motivo', 'estado_reunion']
         )
 
@@ -48,10 +48,14 @@ def crear_reunion():
         fk_junta_directiva=junta_id
     )
     db.session.add(nueva_reunion)
-    db.session.flush()  # Para obtener el ID de la reunión antes del commit
+    db.session.flush() 
 
     # Obtener todos los beneficiarios
-    beneficiarios = Beneficiaria.query.all()
+    beneficiarios = Beneficiaria.query.filter(Beneficiaria.estado == 1).all();
+    if not beneficiarios:
+        return jsonify({
+            "message": "No hay beneficiarias activas para generar la reunión"
+        })
 
     # Crear asistencia para cada beneficiario
     for b in beneficiarios:
