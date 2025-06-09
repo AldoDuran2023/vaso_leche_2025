@@ -15,11 +15,7 @@ def obtener_todas_multas():
         page = request.args.get('page', default=1, type=int)
         per_page = request.args.get('per_page', default=10, type=int)
 
-        query = Multa.query \
-            .options(
-                joinedload(Multa.beneficiaria).joinedload(Beneficiaria.persona)
-            ) \
-            .order_by(Multa.fecha_multa.desc())
+        query = db.session.query(Multa).options(joinedload(Multa.beneficiaria).joinedload(Beneficiaria.persona)).filter(Multa.pagado == 0).order_by(Multa.fecha_multa.desc())
 
         paginated = query.paginate(page=page, per_page=per_page, error_out=False)
 
@@ -96,7 +92,7 @@ def obtener_multas_beneficiaria(id_beneficiaria):
     try:
         solo_pendientes = request.args.get('pendientes', 'false').lower() == 'true'
         
-        query = Multa.query.filter_by(fk_beneficiaria=id_beneficiaria)
+        query = Multa.query.filter_by(fk_beneficiaria=id_beneficiaria, pagado=0) 
         if solo_pendientes:
             query = query.filter_by(pagado=0)
         
@@ -145,6 +141,7 @@ def obtener_multas_beneficiaria(id_beneficiaria):
             'message': 'Error al obtener las multas'
         }), 500
 
+# Ruta para actualizar el estado de una multa (marcar como pagada)
 @multas.route('/api/multa/<int:id_multa>', methods=['PUT'])
 def pagar_multa(id_multa):
     try:
@@ -196,102 +193,3 @@ def pagar_multa(id_multa):
         }), 500
 
         
-# Ruta para pagar múltiples multas de una beneficiaria
-@multas.route('/api/multas/pagar-multiples', methods=['PUT'])
-def pagar_multas_multiples():
-    try:
-        data = request.json
-        ids_multas = data.get('ids_multas', [])
-        fk_beneficiaria = data.get('fk_beneficiaria')
-        fecha_pago = data.get('fecha_pago')
-        observacion_pago = data.get('observacion_pago', '')
-        
-        if not ids_multas:
-            return jsonify({
-                'success': False,
-                'message': 'Debe proporcionar al menos una multa para pagar'
-            }), 400
-        
-        # Validar que todas las multas existen y pertenecen a la beneficiaria
-        multas = Multa.query.filter(
-            Multa.id_multa.in_(ids_multas)
-        ).all()
-        
-        if len(multas) != len(ids_multas):
-            return jsonify({
-                'success': False,
-                'message': 'Algunas multas no fueron encontradas'
-            }), 404
-        
-        # Validar que todas las multas pertenecen a la misma beneficiaria (si se especifica)
-        if fk_beneficiaria:
-            multas_invalidas = [m for m in multas if m.fk_beneficiaria != fk_beneficiaria]
-            if multas_invalidas:
-                return jsonify({
-                    'success': False,
-                    'message': 'Todas las multas deben pertenecer a la misma beneficiaria'
-                }), 400
-        
-        # Validar que ninguna multa ya esté pagada
-        multas_ya_pagadas = [m for m in multas if m.pagado == 1]
-        if multas_ya_pagadas:
-            ids_pagadas = [str(m.id_multa) for m in multas_ya_pagadas]
-            return jsonify({
-                'success': False,
-                'message': f'Las siguientes multas ya están pagadas: {", ".join(ids_pagadas)}'
-            }), 400
-        
-        # Establecer fecha de pago
-        if fecha_pago:
-            from datetime import datetime
-            fecha_pago_obj = datetime.strptime(fecha_pago, '%Y-%m-%d').date()
-        else:
-            from datetime import date
-            fecha_pago_obj = date.today()
-        
-        # Procesar el pago de todas las multas
-        multas_procesadas = []
-        total_pagado = 0
-        
-        for multa in multas:
-            multa.pagado = 1
-            multa.fecha_pago = fecha_pago_obj
-            
-            # Actualizar observaciones
-            if observacion_pago:
-                if multa.observaciones:
-                    multa.observaciones += f" | Pago múltiple: {observacion_pago}"
-                else:
-                    multa.observaciones = f"Pago múltiple: {observacion_pago}"
-            
-            total_pagado += float(multa.monto)
-            multas_procesadas.append({
-                'id_multa': multa.id_multa,
-                'monto': float(multa.monto),
-                'fecha_multa': multa.fecha_multa.isoformat() if multa.fecha_multa else None
-            })
-        
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Se pagaron exitosamente {len(multas)} multas',
-            'datos': {
-                'multas_pagadas': len(multas),
-                'total_pagado': total_pagado,
-                'fecha_pago': fecha_pago_obj.isoformat(),
-                'multas_procesadas': multas_procesadas
-            }
-        }), 200
-    except ValueError as ve:
-        return jsonify({
-            'success': False,
-            'message': 'Formato de fecha inválido. Use YYYY-MM-DD'
-        }), 400
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': 'Error al procesar el pago de las multas'
-        }), 500

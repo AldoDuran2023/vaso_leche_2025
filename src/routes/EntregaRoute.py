@@ -100,7 +100,7 @@ def crear_entrega():
                 detalle_leche = DetalleViveresEntregados(
                     fk_detalle_entrega=detalle.id_detalle_entregas,
                     fk_tipo_viver=ID_LECHE,
-                    cantidad=raciones * 3
+                    cantidad=raciones * 6
                 )
 
                 db.session.add_all([detalle_avena, detalle_leche])

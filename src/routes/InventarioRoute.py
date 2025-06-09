@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from src.models.Inventario import Inventario
 from utils.paginador import paginar_query
+from src.models.TipoViver import TipoViveres
 
 inventarios_bp = Blueprint('inventarios', __name__)
 
@@ -28,4 +29,27 @@ def listar_inventarios():
             "success": False,
             "error": str(e),
             "message": "Error al listar los inventarios"
+        }), 500
+
+# Ruta para obtener todos los tipos de viveres
+@inventarios_bp.route('/api/tipo_viveres', methods=['GET']) # Added leading slash for consistency
+def listar_tipo_viveres():
+    try:
+        tipo_viveres = TipoViveres.query.all() # Changed this line
+        
+        result = [
+            {
+                "id": tv.id_viver, # Changed to id_viver based on your model
+                "nombre": tv.viver,
+                "unidad": tv.tipo_unidad
+            } for tv in tipo_viveres
+        ]
+        
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "Error al listar los tipos de víveres"
         }), 500

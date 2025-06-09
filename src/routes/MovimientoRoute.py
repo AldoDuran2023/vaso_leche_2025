@@ -32,69 +32,108 @@ def obtener_movimientos():
             'message': 'Error al obtener los movimientos'
         }), 500
 
-# Ruta para registrar un nuevo movimiento
-@movimiento.route('/api/movimientos', methods=['POST'])
-def registrar_movimiento():
+# Ruta para pagar multas
+@movimiento.route('/api/multas/pagar-multiples/<int:fk_beneficiaria>', methods=['PUT'])
+def pagar_multas_multiples(fk_beneficiaria):
     try:
         data = request.json
+        ids_multas = data.get('ids_multas', [])
+        fecha_pago = data.get('fecha_pago')  
+        observacion_pago = data.get('observacion_pago', '')
+        fk_representante = data.get('fk_representante') 
 
-        monto = data.get('monto')
-        fecha_movimiento = data.get('fecha_movimiento')
-        fk_representante = data.get('fk_representante')
-        fk_multa = data.get('fk_multa')  # opcional
-        tipo_movimiento = data.get('tipo_movimiento', 'Ingreso')
-        descripcion = data.get('descripcion', '')
-
-        if not all([monto, fecha_movimiento, fk_representante]):
+        if not ids_multas:
             return jsonify({
                 'success': False,
-                'message': 'Faltan campos obligatorios (monto, fecha_movimiento, fk_representante)'
+                'message': 'Debe proporcionar al menos una multa para pagar'
             }), 400
 
-        fecha_movimiento = datetime.strptime(fecha_movimiento, '%Y-%m-%d').date()
+        if not fk_representante:
+            return jsonify({
+                'success': False,
+                'message': 'Debe proporcionar el ID del representante que realiza el pago'
+            }), 400
 
-        nuevo_mov = Movimiento(
-            monto=monto,
-            fecha_movimiento=fecha_movimiento,
-            fk_representante=fk_representante,
-            fk_multa=fk_multa
-        )
-        nuevo_mov.tipo_movimiento = tipo_movimiento
-        nuevo_mov.descripcion = descripcion
+        multas = Multa.query.filter(
+            Multa.id_multa.in_(ids_multas),
+            Multa.fk_beneficiaria == fk_beneficiaria
+        ).all()
 
-        db.session.add(nuevo_mov)
+        if len(multas) != len(ids_multas):
+            return jsonify({
+                'success': False,
+                'message': 'Algunas multas no fueron encontradas o no pertenecen a la beneficiaria especificada'
+            }), 404
 
-        # Si tiene multa, marcarla como pagada
-        if fk_multa:
-            multa = Multa.query.get(fk_multa)
-            if multa:
-                multa.pagado = 1
-                multa.fecha_pago = fecha_movimiento
+        multas_ya_pagadas = [m for m in multas if m.pagado == 1]
+        if multas_ya_pagadas:
+            ids_pagadas = [str(m.id_multa) for m in multas_ya_pagadas]
+            return jsonify({
+                'success': False,
+                'message': f'Las siguientes multas ya están pagadas: {", ".join(ids_pagadas)}'
+            }), 400
+
+        # Preparar fecha
+        if fecha_pago:
+            fecha_pago_obj = datetime.strptime(fecha_pago, '%Y-%m-%d').date()
+        else:
+            fecha_pago_obj = date.today()
+
+        multas_procesadas = []
+        total_pagado = 0
+
+        for multa in multas:
+            multa.pagado = 1
+            multa.fecha_pago = fecha_pago_obj
+
+            if observacion_pago:
                 if multa.observaciones:
-                    multa.observaciones += f" | Pago automático por movimiento"
+                    multa.observaciones += f" | Pago múltiple: {observacion_pago}"
                 else:
-                    multa.observaciones = "Pago automático por movimiento"
+                    multa.observaciones = f"Pago múltiple: {observacion_pago}"
+
+            # ✅ Registrar un movimiento por cada multa
+            movimiento = Movimiento(
+                monto=multa.monto,
+                fecha_movimiento=fecha_pago_obj,
+                fk_representante=fk_representante,
+                fk_multa=multa.id_multa
+            )
+            movimiento.tipo_movimiento = 'Ingreso'  # Exactamente como en tu ENUM
+            movimiento.descripcion = f'Pago de multa #{multa.id_multa} de beneficiaria {fk_beneficiaria}'
+            db.session.add(movimiento)
+
+            total_pagado += float(multa.monto)
+            multas_procesadas.append({
+                'id_multa': multa.id_multa,
+                'monto': float(multa.monto),
+                'fecha_multa': multa.fecha_multa
+            })
 
         db.session.commit()
 
         return jsonify({
             'success': True,
-            'message': 'Movimiento registrado correctamente',
-            'movimiento': {
-                'idMovimientos': nuevo_mov.idMovimientos,
-                'monto': float(nuevo_mov.monto),
-                'fecha_movimiento': nuevo_mov.fecha_movimiento.isoformat(),
-                'fk_representante': nuevo_mov.fk_representante,
-                'fk_multa': nuevo_mov.fk_multa,
-                'tipo_movimiento': nuevo_mov.tipo_movimiento,
-                'descripcion': nuevo_mov.descripcion
+            'message': f'Se pagaron exitosamente {len(multas)} multas para la beneficiaria {fk_beneficiaria}',
+            'datos': {
+                'beneficiaria_id': fk_beneficiaria,
+                'multas_pagadas': len(multas),
+                'total_pagado': total_pagado,
+                'fecha_pago': fecha_pago_obj.isoformat(),
+                'multas_procesadas': multas_procesadas
             }
-        }), 201
+        }), 200
 
+    except ValueError:
+        return jsonify({
+            'success': False,
+            'message': 'Formato de fecha inválido. Use AAAA-MM-DD'
+        }), 400
     except Exception as e:
         db.session.rollback()
+        print('Error al procesar pago múltiple:', str(e))
         return jsonify({
             'success': False,
             'error': str(e),
-            'message': 'Error al registrar el movimiento'
+            'message': 'Error al procesar el pago de las multas'
         }), 500

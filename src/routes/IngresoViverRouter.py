@@ -3,8 +3,9 @@ from src.database.db import db
 from src.models.IngresoViver import IngresoViveres
 from src.models.DetalleIngresoViver import DetalleIngresoViveres
 from src.models.Inventario import Inventario
+from src.models.TipoViver import TipoViveres
 from datetime import datetime
-from utils.paginador import paginar_query
+from sqlalchemy import func, desc
 
 ingresos_viveres = Blueprint('ingresos_viveres', __name__)
 
@@ -14,30 +15,33 @@ def registrar_ingreso_viveres():
     try:
         data = request.json
         ingreso = IngresoViveres(
-            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
+            fecha_ingreso=datetime.utcnow(),
             responsable=data['responsable'],
-            fk_junta_directiva=data['fk_junta_directiva']
+            fk_junta_directiva=int(data['fk_junta_directiva'])
         )
         db.session.add(ingreso)
-        db.session.flush()  # Necesario para obtener el idIngreso_Viveres
+        db.session.flush()  
 
         for item in data['detalles']:
+            cantidad = int(item['cantidad'])
+            fk_tipo_viver = int(item['fk_tipo_viver'])
+
             detalle = DetalleIngresoViveres(
                 fk_ingreso_viver=ingreso.idIngreso_Viveres,
-                fk_tipo_viver=item['fk_tipo_viver'],
-                cantidad=item['cantidad']
+                fk_tipo_viver=fk_tipo_viver,
+                cantidad=cantidad
             )
             db.session.add(detalle)
 
             # Actualizar inventario
-            inventario = Inventario.query.filter_by(fk_tipo_viver=item['fk_tipo_viver']).first()
+            inventario = Inventario.query.filter_by(fk_tipo_viver=fk_tipo_viver).first()
             if inventario:
-                inventario.cantidad_total += item['cantidad']
+                inventario.cantidad_total += cantidad
                 inventario.fecha_actualizacion = datetime.utcnow()
             else:
                 nuevo = Inventario(
-                    fk_tipo_viver=item['fk_tipo_viver'],
-                    cantidad_total=item['cantidad']
+                    fk_tipo_viver=fk_tipo_viver,
+                    cantidad_total=cantidad
                 )
                 db.session.add(nuevo)
 
@@ -46,6 +50,7 @@ def registrar_ingreso_viveres():
 
     except Exception as e:
         db.session.rollback()
+        print('Error al registrar ingreso:', str(e)) 
         return jsonify({"success": False, "error": str(e), "message": "Error al registrar ingreso de víveres"}), 500
 
 # Ruta para obtener los detalles del ingreso de los viveres por id
@@ -91,29 +96,37 @@ def obtener_ingresos_viveres():
         page = request.args.get('page', default=1, type=int)
         per_page = request.args.get('per_page', default=10, type=int)
 
-        pagination = IngresoViveres.query \
-            .join(IngresoViveres.junta_directiva) \
-            .order_by(IngresoViveres.fecha_ingreso.desc()) \
-            .paginate(page=page, per_page=per_page, error_out=False)
+        subquery = db.session.query(
+            IngresoViveres.idIngreso_Viveres.label('id'),
+            IngresoViveres.fecha_ingreso.label('fecha'),
+            IngresoViveres.responsable.label('responsable'),
+            func.group_concat(
+                func.concat(TipoViveres.viver, ' ', DetalleIngresoViveres.cantidad, ' unidades')
+            ).label('detalles_de_entrega')
+        ).join(DetalleIngresoViveres, IngresoViveres.idIngreso_Viveres == DetalleIngresoViveres.fk_ingreso_viver) \
+         .join(TipoViveres, DetalleIngresoViveres.fk_tipo_viver == TipoViveres.id_viver) \
+         .group_by(IngresoViveres.idIngreso_Viveres, IngresoViveres.fecha_ingreso, IngresoViveres.responsable) \
+         .order_by(desc(IngresoViveres.fecha_ingreso)) \
+         .subquery()
+
+        total = db.session.query(func.count()).select_from(subquery).scalar()
+        resultados = db.session.query(subquery).offset((page - 1) * per_page).limit(per_page).all()
 
         ingresos_list = []
-        for ingreso in pagination.items:
+        for row in resultados:
             ingresos_list.append({
-                "idIngreso_Viveres": ingreso.idIngreso_Viveres,
-                "fecha_ingreso": ingreso.fecha_ingreso.isoformat(),
-                "responsable": ingreso.responsable,
-                "junta_directiva": {
-                    "id": ingreso.fk_junta_directiva,
-                    "anio": ingreso.junta_directiva.anio
-                }
+                "id": row.id,
+                "fecha": row.fecha.isoformat(),
+                "responsable": row.responsable,
+                "detalles_de_entrega": row.detalles_de_entrega
             })
 
         return jsonify({
             "success": True,
-            "page": pagination.page,
-            "per_page": pagination.per_page,
-            "total": pagination.total,
-            "ingresos": ingresos_list
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "data": ingresos_list
         }), 200
 
     except Exception as e:

@@ -6,22 +6,29 @@ from src.models.DetalleViverEntregado import DetalleViveresEntregados
 from src.models.Persona import Persona
 from src.models.TipoViver import TipoViveres
 from src.models.Inventario import Inventario
+from src.models.Multa import Multa
 from sqlalchemy.sql import func, case
 from src.database.db import db
 
 detalle_entregas = Blueprint('detalle_entregas', __name__)
 
+# Ruta para obtener los detalles de una entrega especifica
 @detalle_entregas.route('/api/detalle_entregas/<int:id_entrega>', methods=['GET'])
 def obtener_detalle_entrega(id_entrega):
+
     results = db.session.query(
+        DetalleEntrega.id_detalle_entregas,
         DetalleEntrega.fk_entrega,
+        Beneficiaria.id_beneficiaria,
         Persona.DNI,
         func.concat(Persona.apellido_paterno, ' ', Persona.apellido_materno, ' ', Persona.nombres).label('nombres'),
         DetalleEntrega.cantidad_raciones,
         case((DetalleEntrega.estado == True, 'Entregado'), else_='Pendiente').label('estado'),
         func.group_concat(
             func.concat(TipoViveres.viver, ' (', DetalleViveresEntregados.cantidad, ')')
-        ).label('descripcion')
+        ).label('descripcion'),
+        # Solo contar multas no pagadas (asumiendo que el campo se llama 'pagado' o 'estado')
+        func.count(case((Multa.pagado == False, Multa.id_multa), else_=None)).label('cantidad_multas_pendientes')
     ).join(
         DetalleEntrega.beneficiaria
     ).join(
@@ -30,10 +37,14 @@ def obtener_detalle_entrega(id_entrega):
         DetalleEntrega.detalles_viveres
     ).join(
         TipoViveres, DetalleViveresEntregados.tipo_viver
+    ).outerjoin(
+        Multa, Multa.fk_beneficiaria == Beneficiaria.id_beneficiaria
     ).filter(
         DetalleEntrega.fk_entrega == id_entrega
     ).group_by(
+        DetalleEntrega.id_detalle_entregas,
         DetalleEntrega.fk_entrega,
+        Beneficiaria.id_beneficiaria,
         Persona.DNI,
         Persona.apellido_paterno,
         Persona.apellido_materno,
@@ -48,18 +59,22 @@ def obtener_detalle_entrega(id_entrega):
     formatted_results = []
     for row in results:
         formatted_results.append({
+            "id_detalle_entregas": row.id_detalle_entregas,
             "fk_entrega": row.fk_entrega,
+            "id_beneficiaria": row.id_beneficiaria,
             "dni": row.DNI,
             "nombres": row.nombres,
             "raciones": row.cantidad_raciones,
             "estado": row.estado,
-            "descripcion": row.descripcion
+            "descripcion": row.descripcion,
+            "cantidad_multas_pendientes": row.cantidad_multas_pendientes
         })
 
     return jsonify({
         "message": 'Datos obtenidos exitosamente',
         "data": formatted_results
     })
+
 
 # Ruta para actualizar el estado de una detalle entrega y actualizar el stock del tipo de viveres
 @detalle_entregas.route('/api/detalle_entregas/<int:id_detalle>', methods=['PUT'])
