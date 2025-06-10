@@ -3,17 +3,37 @@ from src.models.Persona import Persona
 from src.models.Beneficiaria import Beneficiaria
 from src.models.TipoBeneficiaria import TipoBeneficiaria
 from src.database.db import db
-from utils.paginador import paginar_query 
-from functionJWT import validate_token 
-
+from utils.export_utils import export_to_excel, export_to_word, export_to_pdf
 
 beneficiarias = Blueprint('beneficiarias', __name__)
 
-# Solo los autenticados pueden acceder
-# @beneficiarias.before_request
-# def verificar_token():
-#     token = request.headers['Authorization'].split(" ")[1]
-#     return validate_token(token, output=False)
+def get_beneficiarias_data():
+    beneficiarias = db.session.query(Beneficiaria).join(Beneficiaria.persona).join(Beneficiaria.tipo_beneficiaria).all()
+
+    return [{
+        'N°': idx + 1,
+        'Nombre Completo': f"{b.persona.nombres} {b.persona.apellido_paterno} {b.persona.apellido_materno}",
+        'Dirección': b.persona.direccion,
+        'Cantidad de Hijos': b.cantidad_hijos,
+        'Tipo de Beneficiaria': b.tipo_beneficiaria.tipo,
+        'Raciones': b.tipo_beneficiaria.cantidad_raciones
+    } for idx, b in enumerate(beneficiarias)]
+
+# Rutas Para exportar datos de las beneficiarias
+@beneficiarias.route('/api/beneficiarias/export/excel', methods=['GET'])
+def export_excel():
+    data = get_beneficiarias_data()
+    return export_to_excel(data, "beneficiarias.xlsx")
+
+@beneficiarias.route('/api/beneficiarias/export/word', methods=['GET'])
+def export_word():
+    data = get_beneficiarias_data()
+    return export_to_word(data, "Reporte de Beneficiarias", "beneficiarias.docx")
+
+@beneficiarias.route('/api/beneficiarias/export/pdf', methods=['GET'])
+def export_pdf():
+    data = get_beneficiarias_data()
+    return export_to_pdf(data, "Reporte de Beneficiarias", "beneficiarias.pdf")
 
 # ruta para obtener todas las beneficiarias
 @beneficiarias.route('/api/beneficiarias', methods=['GET'])
@@ -148,7 +168,7 @@ def create_beneficiaria():
         )
         
         db.session.add(nueva_persona)
-        db.session.flush()  # Para obtener el ID de la persona
+        db.session.flush()  
         
         # Creamos la nueva beneficiaria
         nueva_beneficiaria = Beneficiaria(

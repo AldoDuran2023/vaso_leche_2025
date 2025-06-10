@@ -6,6 +6,8 @@ from src.models.Inventario import Inventario
 from src.models.TipoViver import TipoViveres
 from datetime import datetime
 from sqlalchemy import func, desc
+from src.models.Usuario import Usuario
+from functionJWT import validate_token
 
 ingresos_viveres = Blueprint('ingresos_viveres', __name__)
 
@@ -13,11 +15,29 @@ ingresos_viveres = Blueprint('ingresos_viveres', __name__)
 @ingresos_viveres.route('/api/ingresos_viveres', methods=['POST'])
 def registrar_ingreso_viveres():
     try:
+        
+        # 🔐 Obtener y validar el token
+        token_header = request.headers.get('Authorization')
+        if not token_header:
+            return jsonify({"message": "Token requerido"}), 403
+        
+        token = token_header.split(" ")[1]
+        user_data = validate_token(token, output=True)
+        id_usuario = user_data.get("id_usuario")
+
+        # 🔎 Obtener el representante del usuario
+        usuario = Usuario.query.get(id_usuario)
+        if not usuario or not usuario.representante:
+            return jsonify({"message": "Usuario o representante no válido"}), 400
+
+        representante = usuario.representante
+        junta_id = representante.fk_junta_directiva
+        
         data = request.json
         ingreso = IngresoViveres(
             fecha_ingreso=datetime.utcnow(),
             responsable=data['responsable'],
-            fk_junta_directiva=int(data['fk_junta_directiva'])
+            fk_junta_directiva= junta_id
         )
         db.session.add(ingreso)
         db.session.flush()  

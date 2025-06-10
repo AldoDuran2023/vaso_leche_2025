@@ -2,8 +2,68 @@ from flask import Blueprint, request, jsonify
 from src.models.Inventario import Inventario
 from utils.paginador import paginar_query
 from src.models.TipoViver import TipoViveres
+from src.models.IngresoViver import IngresoViveres
+from src.database.db import db
+from utils.export_utils import export_to_excel, export_to_word, export_to_pdf
+
 
 inventarios_bp = Blueprint('inventarios', __name__)
+
+def get_inventario_data():
+    inventarios = db.session.query(Inventario).join(Inventario.tipo_viver).all()
+    return [{
+        'N°': idx + 1,
+        'Viveres': inv.tipo_viver.viver,
+        'Tipo de Unidad': inv.tipo_viver.tipo_unidad,
+        'Cantidad Total': inv.cantidad_total,
+        'Fecha de Actualización': inv.fecha_actualizacion.strftime('%d/%m/%Y %H:%M')
+    } for idx, inv in enumerate(inventarios)]
+    
+def get_detalle_ingreso_viveres(id_ingreso: int):
+    ingreso = db.session.query(IngresoViveres).filter_by(idIngreso_Viveres=id_ingreso).first()
+    if not ingreso:
+        return []
+
+    junta = ingreso.junta_directiva
+
+    data = []
+    for idx, detalle in enumerate(ingreso.detalle_ingresos, start=1):  # ← CORREGIDO AQUÍ
+        viver = detalle.tipo_viver
+        data.append({
+            'N°': idx,
+            'Fecha de Ingreso': ingreso.fecha_ingreso.strftime('%d/%m/%Y'),
+            'Responsable': ingreso.responsable,
+            'Junta Directiva': junta.anio,
+            'Vívere': viver.viver,
+            'Tipo de Unidad': viver.tipo_unidad,
+            'Cantidad': detalle.cantidad,
+        })
+
+    return data
+
+    
+# Rutas Para exportar datos de las inventarios_bp
+@inventarios_bp.route('/api/ingreso-viveres/<int:id_ingreso>/export/pdf', methods=['GET'])
+def export_detalle_ingreso_pdf(id_ingreso):
+    data = get_detalle_ingreso_viveres(id_ingreso)
+    return export_to_pdf(data, "Detalle de Ingreso de Viveres", f"detalle_ingreso_viveres_{id_ingreso}.pdf")
+
+
+@inventarios_bp.route('/api/inventarios_bp/export/excel', methods=['GET'])
+def export_excel():
+    data = get_inventario_data()
+    return export_to_excel(data, "inventarios_bp.xlsx")
+
+@inventarios_bp.route('/api/inventarios_bp/export/word', methods=['GET'])
+def export_word():
+    data = get_inventario_data()
+    return export_to_word(data, "Reporte de inventarios_bp", "inventarios_bp.docx")
+
+@inventarios_bp.route('/api/inventarios_bp/export/pdf', methods=['GET'])
+def export_pdf():
+    data = get_inventario_data()
+    return export_to_pdf(data, "Reporte de inventarios_bp", "inventarios_bp.pdf")
+
 
 @inventarios_bp.route('/api/inventarios', methods=['GET'])
 def listar_inventarios():

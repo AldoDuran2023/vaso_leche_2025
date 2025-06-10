@@ -12,9 +12,48 @@ from src.models.Representante import Representante
 from src.models.JuntaDirectiva import JuntaDirectiva
 from src.database.db import db
 from datetime import datetime
+from src.models.Usuario import Usuario
+from functionJWT import validate_token
 from sqlalchemy.orm import load_only
+from utils.export_utils import export_to_excel, export_to_word, export_to_pdf
+
 
 entregas = Blueprint('entregas', __name__)
+
+def get_reparticiones_data():
+    entregas = db.session.query(Entrega).join(Entrega.representante).join(Representante.beneficiaria).join(Beneficiaria.persona).all()
+    data = []
+
+    for e in entregas:
+        for detalle in e.detalle_entregas: 
+            persona = detalle.beneficiaria.persona
+            data.append({
+                'N°': len(data) + 1,
+                'Fecha de Entrega': e.fecha_entrega.strftime('%d/%m/%Y'),
+                'Representante': f"{e.representante.beneficiaria.persona.nombres} {e.representante.beneficiaria.persona.apellido_paterno} {e.representante.beneficiaria.persona.apellido_materno}",
+                'Junta Directiva': e.representante.junta_directiva.anio,
+                'Beneficiaria': f"{persona.nombres} {persona.apellido_paterno} {persona.apellido_materno}",
+                'Cantidad Raciones': detalle.cantidad_raciones,
+                'Estado': 'Recibido' if detalle.estado else 'Pendiente'
+            })
+    return data
+
+
+# Rutas Para exportar datos de las entregas
+@entregas.route('/api/entregas/export/excel', methods=['GET'])
+def export_excel():
+    data = get_reparticiones_data()
+    return export_to_excel(data, "entregas.xlsx")
+
+@entregas.route('/api/entregas/export/word', methods=['GET'])
+def export_word():
+    data = get_reparticiones_data()
+    return export_to_word(data, "Reporte de entregas", "entregas.docx")
+
+@entregas.route('/api/entregas/export/pdf', methods=['GET'])
+def export_pdf():
+    data = get_reparticiones_data()
+    return export_to_pdf(data, "Reporte de entregas", "entregas.pdf")
 
 # Ruta para obtener todas las entregas 
 @entregas.route('/api/entregas', methods=['GET'])
@@ -62,18 +101,34 @@ def obetenr_entregas():
 @entregas.route('/api/entregas/create', methods=['POST'])
 def crear_entrega():
     try:
+        token_header = request.headers.get('Authorization')
+        if not token_header:
+            return jsonify({"message": "Token requerido"}), 403
+        
+        token = token_header.split(" ")[1]
+        user_data = validate_token(token, output=True)
+        id_usuario = user_data.get("id_usuario")
+        
+        # 🔎 Obtener el representante del usuario
+        usuario = Usuario.query.get(id_usuario)
+        if not usuario or not usuario.representante:
+            return jsonify({"message": "Usuario o representante no válido"}), 400
+        
+        representante = usuario.representante
+        
+        # 📩 Datos del request
         data = request.get_json()
-        fk_representante = data.get('fk_representante')
+        fk_representante = representante.id_representante
         fecha_entrega = data.get('fecha_entrega')
         estado = data.get('estado', 'Pendiente')
 
         nueva_entrega = Entrega(fk_representante, fecha_entrega, estado)
         db.session.add(nueva_entrega)
-        db.session.commit()  # Necesario para tener el id_racion
+        db.session.commit() 
 
-        beneficiarias_activas = Beneficiaria.query.filter_by(estado=True).all()
+        entregas_activas = Beneficiaria.query.filter_by(estado=True).all()
 
-        for beneficiaria in beneficiarias_activas:
+        for beneficiaria in entregas_activas:
             detalle = DetalleEntrega(
                 fk_entrega=nueva_entrega.id_racion,
                 fk_beneficiaria=beneficiaria.id_beneficiaria,
@@ -131,7 +186,22 @@ def crear_entrega():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+    
+# Ruta para actualizar el estado de una entrega
+@entregas.route('/api/entregas/<int:id_entrega>/update', methods=['PUT'])
+def actualizar_entrega(id_entrega):
+    try:
+        estado = "Realizada"
 
+        entrega = Entrega.query.get(id_entrega)
+        if not entrega:
+            return jsonify({'success': False, 'message': 'Entrega no encontrada'}), 404
 
+        entrega.estado = estado
+        db.session.commit()
 
-        
+        return jsonify({'success': True, 'message': 'Entrega actualizada correctamente'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500

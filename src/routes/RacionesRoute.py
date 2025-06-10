@@ -76,38 +76,45 @@ def obtener_detalle_entrega(id_entrega):
     })
 
 
-# Ruta para actualizar el estado de una detalle entrega y actualizar el stock del tipo de viveres
 @detalle_entregas.route('/api/detalle_entregas/<int:id_detalle>', methods=['PUT'])
 def actualizar_detalle_entrega(id_detalle):
-    data = request.get_json()
-    estado = data.get('estado')
+    try:
+        data = request.get_json()
+        estado = data.get('estado')
 
-    if estado not in [True, False]:
-        return jsonify({"message": "Estado inválido. Debe ser True o False"}), 400
+        if estado not in [True, False]:
+            return jsonify({"message": "Estado inválido. Debe ser True o False"}), 400
 
-    detalle_entrega = DetalleEntrega.query.get(id_detalle)
-    if not detalle_entrega:
-        return jsonify({"message": f"No se encontró el detalle de entrega con ID {id_detalle}"}), 404
+        detalle_entrega = DetalleEntrega.query.get(id_detalle)
+        if not detalle_entrega:
+            return jsonify({"message": f"No se encontró el detalle de entrega con ID {id_detalle}"}), 404
 
-    # Si ya fue actualizado previamente como entregado, no restar el stock nuevamente
-    if detalle_entrega.estado == True and estado == True:
-        return jsonify({"message": "La entrega ya fue registrada como entregada"}), 400
+        # Si ya fue entregado y se intenta volver a entregar
+        if detalle_entrega.estado and estado:
+            return jsonify({"message": "Esta entrega ya fue registrada como entregada"}), 400
 
-    # Actualizar estado
-    detalle_entrega.estado = estado
-    db.session.add(detalle_entrega)
+        # Si se está entregando por primera vez, actualizar stock
+        if estado and not detalle_entrega.estado:
+            detalles_viveres = DetalleViveresEntregados.query.filter_by(fk_detalle_entrega=id_detalle).all()
+            for detalle in detalles_viveres:
+                inventario = Inventario.query.filter_by(fk_tipo_viver=detalle.fk_tipo_viver).first()
+                if not inventario:
+                    return jsonify({"message": f"No hay inventario para el tipo de víveres ID {detalle.fk_tipo_viver}"}), 404
 
-    # Si se está marcando como entregado, descontar del inventario
-    if estado:
-        detalles_viveres = DetalleViveresEntregados.query.filter_by(fk_detalle_entrega=id_detalle).all()
-        for detalle in detalles_viveres:
-            inventario = Inventario.query.filter_by(fk_tipo_viver=detalle.fk_tipo_viver).first()
-            if inventario:
                 if inventario.cantidad_total < detalle.cantidad:
-                    return jsonify({"message": f"Stock insuficiente para {detalle.fk_tipo_viver}"}), 400
+                    return jsonify({"message": f"Stock insuficiente para el tipo de víveres ID {detalle.fk_tipo_viver}"}), 400
+
                 inventario.cantidad_total -= detalle.cantidad
                 db.session.add(inventario)
 
-    db.session.commit()
+        # Actualizar estado del detalle
+        detalle_entrega.estado = estado
+        db.session.add(detalle_entrega)
+        db.session.commit()
 
-    return jsonify({"message": "Estado de entrega actualizado y stock ajustado correctamente"})
+        return jsonify({"message": "Estado de entrega actualizado y stock ajustado correctamente"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": "Error interno del servidor", "error": str(e)}), 500
+

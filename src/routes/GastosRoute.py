@@ -5,6 +5,9 @@ from src.models.Representante import Representante
 from src.models.Beneficiaria import Beneficiaria
 from src.models.Persona import Persona 
 from src.database.db import db
+from src.models.Usuario import Usuario
+from functionJWT import validate_token
+from datetime import datetime
 
 gastos = Blueprint('gastos', __name__)
 
@@ -56,10 +59,26 @@ def insertar_gasto():
     data = request.get_json()
 
     try:
+        # 🔐 Obtener y validar el token
+        token_header = request.headers.get('Authorization')
+        if not token_header:
+            return jsonify({"message": "Token requerido"}), 403
+        
+        token = token_header.split(" ")[1]
+        user_data = validate_token(token, output=True)
+        id_usuario = user_data.get("id_usuario")
+
+        # 🔎 Obtener el representante del usuario
+        usuario = Usuario.query.get(id_usuario)
+        if not usuario or not usuario.representante:
+            return jsonify({"message": "Usuario o representante no válido"}), 400
+
+        representante = usuario.representante
+        
         motivo = data['motivo']
-        fecha_gasto = data['fecha_gasto']
+        fecha_gasto = datetime.today().isoformat()
         monto = data['monto']
-        fk_representante = data['fk_representante']
+        fk_representante = representante.id_representante
 
         nuevo_gasto = Gasto(
             motivo=motivo,
